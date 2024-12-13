@@ -1,0 +1,116 @@
+import cv2
+import numpy as np
+import mediapipe as mp
+import math
+
+def calculate_angle(a, b, c):
+    """
+    Calculate the angle between three points: a, b, c.
+    a, b, c are (x, y) coordinates.
+    The angle is formed at point b.
+    """
+    # Create vectors
+    ba = (a[0] - b[0], a[1] - b[1])
+    bc = (c[0] - b[0], c[1] - b[1])
+    
+    # Calculate dot product and magnitude
+    dot_product = ba[0] * bc[0] + ba[1] * bc[1]
+    mag_ba = math.sqrt(ba[0]**2 + ba[1]**2)
+    mag_bc = math.sqrt(bc[0]**2 + bc[1]**2)
+    
+    # Prevent division by zero
+    if mag_ba == 0 or mag_bc == 0:
+        return 0
+    
+    # Calculate the angle in radians and convert to degrees
+    angle = math.acos(dot_product / (mag_ba * mag_bc))
+    return math.degrees(angle)
+
+def process_and_draw_keypoints(image_path, output_path):
+    # Initialize MediaPipe Pose
+    mp_pose = mp.solutions.pose
+    mp_drawing = mp.solutions.drawing_utils
+    pose = mp_pose.Pose()
+    
+    # Read the image
+    image = cv2.imread(image_path)
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    
+    # Perform pose estimation
+    results = pose.process(image_rgb)
+    
+    # Check if pose landmarks are detected
+    if not results.pose_landmarks:
+        print("No pose landmarks detected.")
+        return
+
+    # Define indices for key points
+    keypoint_indices = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]
+
+    # Define joint triplets for angle calculation
+    joint_triplets = [
+        (11, 13, 15),  # Left elbow
+        (12, 14, 16),  # Right elbow
+        (23, 11, 13),  # Left shoulder
+        (24, 12, 14),  # Right shoulder
+        (23, 25, 27),  # Left leg
+        (24, 26, 28),  # Right leg
+        (11, 23, 25),  # Left side of torso
+        (12, 24, 26)   # Right side of torso
+    ]
+
+    # Define connections for keypoints
+    connections = [
+        (11, 13), (13, 15),  # Left arm
+        (12, 14), (14, 16),  # Right arm
+        (11, 23), (12, 24),  # Shoulders to hips
+        (23, 25), (25, 27),  # Left leg
+        (24, 26), (26, 28)   # Right leg
+    ]
+
+    # Extract and draw angles for keypoints
+    height, width, _ = image.shape
+    angles = []
+    landmarks = results.pose_landmarks.landmark
+    for idx, joint_triplet in enumerate(joint_triplets):
+        a_idx, b_idx, c_idx = joint_triplet
+        if a_idx in keypoint_indices and b_idx in keypoint_indices and c_idx in keypoint_indices:
+            # Get (x, y) positions of joints
+            a = (landmarks[a_idx].x * width, landmarks[a_idx].y * height)
+            b = (landmarks[b_idx].x * width, landmarks[b_idx].y * height)
+            c = (landmarks[c_idx].x * width, landmarks[c_idx].y * height)
+            
+            # Calculate the angle
+            angle = calculate_angle(a, b, c)
+            angles.append(angle)
+            
+            # Draw the angle on the image
+            b_int = (int(b[0]), int(b[1]))
+            offset_x, offset_y = -20, -10  # Adjust these values for label placement
+            b_offset = (b_int[0] + offset_x, b_int[1] + offset_y)
+            cv2.putText(image, f"{int(angle)}", b_offset, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 1)
+
+    for connection in connections:
+            start_idx, end_idx = connection
+            if start_idx in keypoint_indices and end_idx in keypoint_indices:
+                start_point = (int(landmarks[start_idx].x * width), int(landmarks[start_idx].y * height))
+                end_point = (int(landmarks[end_idx].x * width), int(landmarks[end_idx].y * height))
+                cv2.line(image, start_point, end_point, (255, 0, 0), 2)  # Blue lines for connections
+
+
+    # Draw the pose landmarks for the selected key points
+    for idx in keypoint_indices:
+        landmark = landmarks[idx]
+        cx, cy = int(landmark.x * width), int(landmark.y * height)
+        cv2.circle(image, (cx, cy), 5, (0, 0, 255), -1) 
+
+    # Save and show the processed image
+    cv2.imwrite(output_path, image)
+    # cv2.imshow("Pose Estimation with Angles", image)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+
+# Example usage
+image_path = "/Users/alazartegegnework/Documents/Year 3/EE375/Final Project/Data/Raw_Images/Windmill13.jpeg"
+output_path = "/Users/alazartegegnework/Documents/Year 3/EE375/Final Project/Data/Processed_images/Windmill13_out.jpeg"
+process_and_draw_keypoints(image_path, output_path)
